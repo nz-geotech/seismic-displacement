@@ -151,20 +151,38 @@ function drawChart(){
 
 }
 function values(){return Object.fromEntries(spec.map(([id])=>[id,Number(document.getElementById(id).value)]))}function validate(){const errors=[];for(const [id,label,,_,min,max] of spec){const el=document.getElementById(id),n=Number(el.value);if(!el.value.trim()||!Number.isFinite(n)||n<min||n>max)errors.push(label+` must be between ${min} and ${max}`)}const v=values();if(v.ac>=v.amax)errors.push('Critical acceleration must be less than maximum acceleration for a sliding displacement assessment.');const m=document.getElementById('message');m.style.color=errors.length?'#a32929':'#17713e';m.textContent=errors.length?errors.join(' • '):'Input values are within the preliminary validation limits. Bray & Macedo (2023) scalar intraslab method is calculated using the supplied spreadsheet coefficients. Wood & Elms is implemented from the supplied expression and requires unit verification.';return !errors.length}function updateResponseModel(){const rigid=document.getElementById("rigid").checked;updatePeriods();document.querySelectorAll(".response-switch").forEach(el=>el.textContent=rigid?"Rigid block":"Deformable block")}document.getElementById("rigid").addEventListener("change",()=>{updateResponseModel();updateBrayT();updateBrayM();updateWood();updateAnderson();updateVisibility()});function resetForm(){document.querySelectorAll('.show-method').forEach(el=>el.checked=true);render();updateZn();updatePeriods();document.getElementById('rigid').checked=false;document.getElementById('earth-type').value='0';updateResponseModel();updateJibson();updateAm();updateSrbulov();updateAnderson();updateBrayT();updateBrayM();updateWood();updateAnderson();updateVisibility();document.getElementById('message').textContent=''}function exportInputs(){if(!validate())return;const data={assessment:'Seismic Permanent Displacement',rigidBlock:document.getElementById('rigid').checked,inputs:values(),visibleMethods:Object.fromEntries([...document.querySelectorAll('.show-method')].map(e=>[e.dataset.method,e.checked])),jibsonDisplacementMm:(()=>{const v=values(),r=v.ac/v.amax;return r>0&&r<1?10*Math.pow(10,-2.710+2.335*Math.log10(1-r)-1.478*Math.log10(r)+0.424*v.mw+0.454*v.zn):null})(),ambraseysSrbulovDisplacementMm:(()=>{const v=values();return Number.isFinite(srbulovMm(v,v.ac/v.amax))?srbulovMm(v,v.ac/v.amax):null})(),ambraseysMenuDisplacementMm:(()=>{const v=values(),r=v.ac/v.amax;return r>0&&r<1?10*Math.pow(10,0.90+2.53*Math.log10(1-r)-1.09*Math.log10(r)+0.30*v.zn):null})(),andersonDisplacementMm:(()=>{const v=values(),d=andersonMm(v,v.ac/v.amax);return Number.isFinite(d)?d:null})(),woodElmsDisplacementMm:(()=>{const v=values(),d=woodMm(v,v.ac/v.amax);return Number.isFinite(d)?d:null})(),brayTravasarouDisplacementMm:(()=>{const v=values(),d=brayTMm(v,v.ac/(document.getElementById("rigid").checked?v.amax:v.sa15));return Number.isFinite(d)?d:null})(),brayMacedoDisplacementMm:(()=>{const v=values(),d=brayMMm(v,v.ac/(document.getElementById("rigid").checked?v.amax:v.sa13));return Number.isFinite(d)?d:null})(),earthquakeType:document.getElementById('earth-type').value,status:'Bray & Macedo scalar earthquake-type method implemented'};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));a.download='seismic-displacement-inputs.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-function saveProject(){
+async function saveProject(){
  const project={format:'seismic-displacement-project',version:1,savedAt:new Date().toISOString(),
   inputs:Object.fromEntries(spec.map(([id])=>[id,document.getElementById(id).value])),
   projectInfo:Object.fromEntries(['project-name','company-name','client-name','project-location','structure-type','project-date','done-by','checked-by'].map(id=>[id,document.getElementById(id).value])),
-  
   rigidBlock:document.getElementById('rigid').checked,
   earthquakeType:document.getElementById('earth-type').value,
   visibleMethods:Object.fromEntries([...document.querySelectorAll('.show-method')].map(e=>[e.dataset.method,e.checked]))};
- const blob=new Blob([JSON.stringify(project,null,2)],{type:'application/json'});
- const url=URL.createObjectURL(blob),a=document.createElement('a');
- a.href=url;a.download='seismic-displacement-project.json';document.body.appendChild(a);a.click();a.remove();
- setTimeout(()=>URL.revokeObjectURL(url),1000);
- const m=document.getElementById('message');m.style.color='#17713e';m.textContent='Project saved. Reload this JSON file to restore inputs and method selections.';
+ const content=JSON.stringify(project,null,2);
+ const defaultName=(document.getElementById('project-name').value.trim()||'seismic-displacement-project')
+  .replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,'-')+'.json';
+ const m=document.getElementById('message');
+ try{
+  if(typeof window.showSaveFilePicker==='function'){
+   const handle=await window.showSaveFilePicker({suggestedName:defaultName,types:[{description:'JSON project file',accept:{'application/json':['.json']}}]});
+   const writable=await handle.createWritable();
+   await writable.write(content);
+   await writable.close();
+   m.style.color='#17713e';m.textContent='Project saved as '+handle.name+'.';
+  }else{
+   // Browsers without the File System Access API control the save location through their download settings.
+   const blob=new Blob([content],{type:'application/json'});
+   const url=URL.createObjectURL(blob),link=document.createElement('a');
+   link.href=url;link.download=defaultName;document.body.appendChild(link);link.click();link.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),1000);
+   m.style.color='#17713e';m.textContent='Download started. Your browser controls whether it asks for a save location.';
+  }
+ }catch(err){
+  if(err.name==='AbortError')return;
+  m.style.color='#a32929';m.textContent='Could not save project: '+err.message;
+ }
 }
+
 async function loadProjectFile(event){
  const file=event.target.files&&event.target.files[0];if(!file)return;
  const m=document.getElementById('message');
